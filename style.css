@@ -1,0 +1,51 @@
+body {
+    background-color: #f4f7f6;
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+}
+
+.main-container {
+    height: 100vh;
+    overflow-x: hidden;
+}
+
+.sidebar {
+    background: linear-gradient(180deg, #2ecc71 0%, #27ae60 100%);
+    box-shadow: 2px 0 10px rgba(0,0,0,0.1);
+}
+
+.weather-card {
+    background: rgba(255, 255, 255, 0.2);
+    backdrop-filter: blur(10px);
+    border: 1px solid rgba(255, 255, 255, 0.3);
+}
+
+.content {
+    background-color: #f8f9fa;
+    overflow-y: auto;
+    height: 100vh;
+}
+
+.card {
+    border: none;
+    border-radius: 15px;
+    transition: transform 0.3s;
+}
+
+.card:hover {
+    transform: translateY(-5px);
+}
+
+.form-label {
+    font-weight: 600;
+    color: #555;
+}
+
+.btn-success {
+    background-color: #2ecc71;
+    border: none;
+    padding: 10px 30px;
+}
+
+.btn-success:hover {
+    background-color: #27ae60;
+}

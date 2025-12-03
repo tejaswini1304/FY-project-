@@ -1,0 +1,559 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Smart Irrigation System</title>
+
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+
+    <style>
+        .impact-bar { height: 10px; border-radius: 5px; }
+        .crop-fact-card { border-left: 5px solid #2ecc71; background-color: #f0fff4; }
+        .unit-badge { font-size: 0.6em; vertical-align: super; opacity: 0.7; }
+
+        /* small styling for language card to match sidebar */
+        .lang-card {
+            background: rgba(255,255,255,0.08);
+            border-radius: 8px;
+            padding: 12px;
+        }
+
+        /* make sure any hidden google widgets won't affect layout (not used here but safe) */
+        .goog-te-banner-frame.skiptranslate,
+        .goog-te-gadget-icon,
+        .goog-te-menu-frame,
+        .goog-te-balloon-frame {
+            display: none !important;
+        }
+        body { top: 0 !important; }
+    </style>
+</head>
+<body>
+    <div class="container-fluid main-container">
+        <div class="row h-100">
+            <!-- Sidebar -->
+            <div class="col-md-3 sidebar p-4 text-white">
+                <h3 id="title_smart"><i class="fas fa-seedling"></i> Smart Irrigate</h3>
+                <p id="subtitle_ai" class="mt-3">AI-Powered Precision Farming</p>
+                <hr>
+
+                <!-- Weather Section -->
+                <div class="weather-card mt-4 p-3 rounded">
+                    <h5 id="live_weather"><i class="fas fa-cloud-sun"></i> Live Weather</h5>
+                    <div class="input-group mb-2">
+                        <input type="text" id="cityInput" class="form-control" placeholder="Enter City">
+                        <button class="btn btn-light" onclick="fetchWeather()"><i class="fas fa-search"></i></button>
+                    </div>
+                    <div id="weatherDisplay" class="d-none">
+                        <h2 id="wTemp">--°C</h2>
+                        <p id="wCond" class="text-uppercase fw-bold">--</p>
+                        <small><i class="fas fa-tint"></i> Hum: <span id="wHum">--</span>%</small>
+                        <small class="ms-2"><i class="fas fa-wind"></i> Wind: <span id="wWind">--</span>km/h</small>
+                    </div>
+                </div>
+
+                <!-- LANGUAGE SELECTOR CARD -->
+                <div class="mt-4 lang-card">
+                    <h5 class="text-white mb-2"><i class="fas fa-language"></i> Language</h5>
+                    <select id="languageSelect" class="form-select form-select-sm">
+                        <option value="en">English</option>
+                        <option value="hi">हिन्दी</option>
+                        <option value="mr">मराठी</option>
+                        <option value="kn">ಕನ್ನಡ</option>
+                        <option value="ta">தமிழ்</option>
+                        <option value="te">తెలుగు</option>
+                    </select>
+                </div>
+            </div>
+
+            <!-- Main Content -->
+            <div class="col-md-9 content p-5">
+                <!-- Input Form -->
+                <div class="row">
+                    <div class="col-lg-8">
+                        <div class="card shadow-sm mb-4">
+                            <div class="card-body">
+                                <h4 class="mb-4 text-primary"><i class="fas fa-sliders-h"></i> Field Parameters</h4>
+                                <form id="predictForm">
+                                    <div class="row g-3">
+                                        <div class="col-md-6">
+                                            <label id="label_crop" class="fw-bold">Crop Selection</label>
+                                            <select class="form-select" id="crop_type">
+                                                {% for opt in options['CROP_TYPE'] %}
+                                                <option value="{{opt}}">{{opt}}</option>
+                                                {% endfor %}
+                                            </select>
+                                        </div>
+                                        <div class="col-md-6">
+                                            <label id="label_soil" class="fw-bold">Soil Type</label>
+                                            <select class="form-select" id="soil_type">
+                                                {% for opt in options['SOIL_TYPE'] %}
+                                                <option value="{{opt}}">{{opt}}</option>
+                                                {% endfor %}
+                                            </select>
+                                        </div>
+                                        <div class="col-md-6">
+                                            <label id="label_region" class="fw-bold">Region</label>
+                                            <select class="form-select" id="region">
+                                                {% for opt in options['REGION'] %}
+                                                <option value="{{opt}}">{{opt}}</option>
+                                                {% endfor %}
+                                            </select>
+                                        </div>
+                                        <div class="col-md-6">
+                                            <label id="label_moist" class="fw-bold">Current Soil Moisture (0-100)</label>
+                                            <input type="number" class="form-control border-primary" id="soil_moisture" value="45">
+                                        </div>
+                                    </div>
+
+                                    <!-- Hidden Weather Inputs -->
+                                    <input type="hidden" id="temperature">
+                                    <input type="hidden" id="humidity">
+                                    <input type="hidden" id="rainfall">
+                                    <input type="hidden" id="wind_speed">
+                                    <input type="hidden" id="weather_condition">
+
+                                    <div class="mt-4 text-end">
+                                        <button id="btn_analyze" type="button" class="btn btn-success btn-lg px-5" onclick="runAnalysis()">
+                                            <i class="fas fa-check-circle"></i> Analyze & Forecast
+                                        </button>
+                                    </div>
+                                </form>
+                            </div>
+                        </div>
+
+                        <!-- 4-Day Forecast Table (Hidden Initially) -->
+                        <div id="forecastPanel" class="card shadow-sm d-none mb-4">
+                            <div id="forecast_title" class="card-header bg-dark text-white">
+                                <i class="fas fa-calendar-alt"></i> Future Irrigation Plan (4-Day)
+                            </div>
+                            <div class="card-body">
+                                <table class="table table-hover align-middle">
+                                    <thead class="table-light">
+                                        <tr>
+                                            <th>Date</th>
+                                            <th>Forecast</th>
+                                            <th>Temp</th>
+                                            <th>Decision</th>
+                                            <th>Water Qty <small class="text-muted">(L/m²)</small></th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="forecastTableBody"></tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Right Panel: Results & Visualization -->
+                    <div class="col-lg-4">
+                        <!-- Result Card -->
+                        <div class="card shadow-sm h-100 bg-white" id="resultCard" style="display:none;">
+                            <div class="card-body">
+                                <div class="text-center mb-4">
+                                    <div id="statusIcon" style="font-size: 4rem;"></div>
+                                    <h3 id="statusText" class="fw-bold mt-2"></h3>
+
+                                    <!-- IMPROVED UNIT DISPLAY -->
+                                    <h4 class="text-primary mt-2">
+                                        <i class="fas fa-fill-drip"></i>
+                                        <span id="resAmount" class="display-6 fw-bold"></span>
+                                        <span class="fs-6 text-muted">Liters / m²</span>
+                                    </h4>
+                                    <small class="text-muted">(Equivalent to mm of rain)</small>
+                                </div>
+
+                                <!-- Crop Fact Card -->
+                                <div class="card crop-fact-card mb-3">
+                                    <div class="card-body p-2">
+                                        <small class="text-success fw-bold">CROP INSIGHT:</small><br>
+                                        <small id="cropFactText" class="text-muted"></small>
+                                    </div>
+                                </div>
+
+                                <!-- Visual Impact Bars (The "Why") -->
+                                <h6 id="decision_factors" class="fw-bold mt-4">Decision Factors:</h6>
+
+                                <div class="d-flex justify-content-between small">
+                                    <span class="text-muted">Heat Stress</span>
+                                    <span class="text-danger fw-bold" id="lblTemp"></span>
+                                </div>
+                                <div class="progress mb-2" style="height: 6px;">
+                                    <div id="barTemp" class="progress-bar bg-danger" role="progressbar" style="width: 0%"></div>
+                                </div>
+
+                                <div class="d-flex justify-content-between small">
+                                    <span class="text-muted">Soil Dryness</span>
+                                    <span class="text-warning fw-bold" id="lblMoist"></span>
+                                </div>
+                                <div class="progress mb-2" style="height: 6px;">
+                                    <div id="barMoist" class="progress-bar bg-warning" role="progressbar" style="width: 0%"></div>
+                                </div>
+
+                                <div class="d-flex justify-content-between small">
+                                    <span class="text-muted">Rainfall Offset</span>
+                                    <span class="text-info fw-bold" id="lblRain"></span>
+                                </div>
+                                <div class="progress mb-2" style="height: 6px;">
+                                    <div id="barRain" class="progress-bar bg-info" role="progressbar" style="width: 0%"></div>
+                                </div>
+
+                                <div class="alert alert-light border mt-3 small" id="resAdvice"></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+    </div>
+
+    <!-- ================= ORIGINAL JS (unchanged) ================= -->
+    <script>
+        async function fetchWeather() {
+            const city = document.getElementById('cityInput').value;
+            if(!city) return;
+
+            const btn = document.querySelector('.weather-card button');
+            btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
+
+            try {
+                const res = await fetch('/get_weather', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({city: city})
+                });
+                const data = await res.json();
+
+                if(data.error) { alert(data.error); return; }
+
+                document.getElementById('weatherDisplay').classList.remove('d-none');
+                document.getElementById('wTemp').innerText = data.temperature + '°C';
+                document.getElementById('wCond').innerText = data.condition_desc || data.weather_condition;
+                document.getElementById('wHum').innerText = data.humidity;
+                document.getElementById('wWind').innerText = data.wind_speed;
+
+                // Auto-fill hidden inputs
+                document.getElementById('temperature').value = data.temperature;
+                document.getElementById('humidity').value = data.humidity;
+                document.getElementById('rainfall').value = data.rainfall;
+                document.getElementById('wind_speed').value = data.wind_speed;
+                document.getElementById('weather_condition').value = data.weather_condition;
+            } catch(e) { console.error(e); }
+            btn.innerHTML = '<i class="fas fa-search"></i>';
+        }
+
+        async function runAnalysis() {
+            // 1. Check if weather is loaded
+            if(document.getElementById('temperature').value === "") {
+                alert("Please enter a city and click Search to get weather data first!");
+                return;
+            }
+
+            // 2. Prepare Data
+            const baseData = {
+                crop_type: document.getElementById('crop_type').value,
+                soil_type: document.getElementById('soil_type').value,
+                region: document.getElementById('region').value,
+                soil_moisture: document.getElementById('soil_moisture').value,
+                temperature: document.getElementById('temperature').value,
+                humidity: document.getElementById('humidity').value,
+                rainfall: document.getElementById('rainfall').value,
+                wind_speed: document.getElementById('wind_speed').value,
+                weather_condition: document.getElementById('weather_condition').value
+            };
+
+            // 3. Get Main Prediction
+            const res = await fetch('/predict', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify(baseData)
+            });
+            const result = await res.json();
+
+            // 4. Update Result Card & Visualization
+            const card = document.getElementById('resultCard');
+            card.style.display = 'block';
+
+            const icon = document.getElementById('statusIcon');
+            const text = document.getElementById('statusText');
+
+            if (result.needs_water) {
+                icon.innerHTML = '<i class="fas fa-tint text-primary fa-beat"></i>';
+                text.innerText = "Irrigate Now";
+                text.className = "fw-bold mt-2 text-primary";
+            } else {
+                icon.innerHTML = '<i class="fas fa-check-circle text-success"></i>';
+                text.innerText = "No Action";
+                text.className = "fw-bold mt-2 text-success";
+            }
+
+            document.getElementById('resAmount').innerText = result.water_amount;
+            document.getElementById('resAdvice').innerText = result.advice;
+            document.getElementById('cropFactText').innerText = result.crop_fact;
+
+            // Update Bars and Labels
+            document.getElementById('barTemp').style.width = result.impacts.temp + "%";
+            document.getElementById('lblTemp').innerText = result.impacts.temp + "%";
+
+            document.getElementById('barMoist').style.width = result.impacts.moisture + "%";
+            document.getElementById('lblMoist').innerText = result.impacts.moisture + "%";
+
+            document.getElementById('barRain').style.width = result.impacts.rain + "%";
+            document.getElementById('lblRain').innerText = result.impacts.rain + "%";
+
+            // 5. Get Forecast (After main result)
+            fetchForecast(baseData);
+        }
+
+        async function fetchForecast(baseData) {
+            const city = document.getElementById('cityInput').value;
+
+            const res = await fetch('/predict_forecast', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({city: city, base_inputs: baseData})
+            });
+            const forecasts = await res.json();
+
+            if(forecasts.error) return;
+
+            const tbody = document.getElementById('forecastTableBody');
+            tbody.innerHTML = '';
+
+            forecasts.forEach(day => {
+                const row = `<tr>
+                    <td><strong>${day.day}</strong> <br><small class="text-muted">${day.date}</small></td>
+                    <td><i class="fas fa-cloud"></i> ${day.condition}</td>
+                    <td>${day.temp}°C</td>
+                    <td>${day.needs_water ? '<span class="badge bg-danger">Water</span>' : '<span class="badge bg-success">Wait</span>'}</td>
+                    <td class="fw-bold">${day.amount}</td>
+                </tr>`;
+                tbody.innerHTML += row;
+            });
+
+            // Show Forecast Panel
+            document.getElementById('forecastPanel').classList.remove('d-none');
+        }
+    </script>
+
+    <!-- ================ TRANSLATION SCRIPT (AJAX to /translate_texts) ================ -->
+    <script>
+        (function() {
+            const languageSelect = document.getElementById('languageSelect');
+
+            // IDs and the element text to translate
+            const translatableIds = [
+                'title_smart',
+                'subtitle_ai',
+                'live_weather',
+                'label_crop',
+                'label_soil',
+                'label_region',
+                'label_moist',
+                'btn_analyze',
+                'forecast_title',
+                'decision_factors'
+            ];
+
+            // Helper: collect current text mapping
+            function collectTexts() {
+                const texts = {};
+                translatableIds.forEach(id => {
+                    const el = document.getElementById(id);
+                    if (el) texts[id] = el.innerText.trim();
+                });
+                return texts;
+            }
+
+            // Helper: apply translated mapping to DOM
+            function applyTranslations(obj) {
+                for (const id in obj) {
+                    const el = document.getElementById(id);
+                    if (!el) continue;
+                    // Keep innerHTML for button so icons stay if any
+                    if (id === 'btn_analyze') {
+                        // try to keep icon and replace only text node after icon
+                        // If structure is simple, replace innerText; otherwise fallback
+                        try {
+                            // If button contains icon, preserve icon HTML
+                            const icon = el.querySelector('i');
+                            if (icon) {
+                                // Set button innerHTML = icon.outerHTML + ' ' + translated text
+                                el.innerHTML = icon.outerHTML + ' ' + obj[id];
+                            } else {
+                                el.innerText = obj[id];
+                            }
+                        } catch (e) {
+                            el.innerText = obj[id];
+                        }
+                    } else {
+                        el.innerText = obj[id];
+                    }
+                }
+            }
+
+            // Translate via backend
+            async function translateTo(lang) {
+                const texts = collectTexts();
+                try {
+                    const res = await fetch('/translate_texts', {
+                        method: 'POST',
+                        headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify({ lang, texts })
+                    });
+                    if (!res.ok) throw new Error('Translate API returned ' + res.status);
+                    const translated = await res.json();
+                    applyTranslations(translated);
+                } catch (err) {
+                    console.error('Translation error:', err);
+                }
+            }
+
+            // On change: call API and save pref
+            languageSelect.addEventListener('change', function() {
+                const lang = this.value;
+                localStorage.setItem('ui_lang', lang);
+                translateTo(lang);
+            });
+
+            // On load: apply saved pref (if present)
+            window.addEventListener('DOMContentLoaded', function() {
+                const saved = localStorage.getItem('ui_lang') || 'en';
+                languageSelect.value = saved;
+                // Delay a tick to ensure DOM elements present
+                setTimeout(() => translateTo(saved), 200);
+            });
+        })();
+    </script>
+
+<!-- START: AgriAssist Chatbot (bottom-left bubble) -->
+<style>
+#chat-bubble { position: fixed; bottom: 20px; left: 20px; z-index: 1050; }
+#chat-bubble button { width:56px;height:56px;border-radius:50%;background:linear-gradient(135deg,#2ecc71,#27ae60);color:#fff;border:none;box-shadow:0 6px 18px rgba(0,0,0,0.15); }
+#chat-window { position: fixed; bottom: 90px; left: 20px; width: 320px; max-height: 480px; z-index:1050; background:#fff; border-radius:12px; box-shadow:0 12px 30px rgba(0,0,0,0.18); display:none; flex-direction:column; overflow:hidden; }
+#chat-window .cw-header { background: linear-gradient(90deg,#2ecc71,#27ae60); color:#fff; padding:12px; display:flex; align-items:center; gap:8px; }
+#chat-window .close-chat { margin-left:auto; background:transparent; border:none; color:white; }
+#chat-window .cw-body { padding:12px; overflow-y:auto; flex:1; background:#f8f9fa; }
+.chat-msg { margin-bottom:10px; display:flex; }
+.chat-msg.user { justify-content:flex-end; }
+.chat-msg .bubble { max-width:78%; padding:8px 10px; border-radius:10px; }
+.chat-msg.user .bubble { background:#dcf8c6; }
+.chat-msg.bot .bubble { background:white; border:1px solid #e6e6e6; }
+#chat-window .cw-input { padding:8px; border-top:1px solid #eee; display:flex; gap:8px; }
+#chat-window textarea { resize:none; border-radius:6px; border:1px solid #ddd; padding:8px; flex:1; height:44px; }
+#chat-window .send-btn { border:none; background:#27ae60; color:white; padding:8px 12px; border-radius:6px; }
+.small-hint { font-size:12px; color:#666; margin-top:6px; }
+</style>
+
+<div id="chat-bubble">
+    <button id="openChat" title="Ask AgriAssist"><i class="fas fa-comment-dots" style="font-size:18px"></i></button>
+</div>
+
+<div id="chat-window" aria-hidden="true" role="dialog" aria-label="Chat with AgriAssist">
+    <div class="cw-header">
+        <i class="fas fa-tractor"></i>
+        <div style="margin-left:6px;">
+            <div style="font-weight:600">AgriAssist</div>
+            <div style="font-size:12px;opacity:0.9">Ask about crops, irrigation, pests…</div>
+        </div>
+        <button class="close-chat" id="closeChat" title="Close"><i class="fas fa-times"></i></button>
+    </div>
+
+    <div class="cw-body" id="chatMessages">
+        <div class="small-hint">Tip: ask practical questions like "When should I water wheat?"</div>
+    </div>
+
+    <div class="cw-input">
+        <textarea id="chatInput" placeholder="Type your question..." maxlength="600"></textarea>
+        <button class="send-btn" id="sendChat">Send</button>
+    </div>
+</div>
+
+<script>
+(function(){
+    const openBtn = document.getElementById('openChat');
+    const closeBtn = document.getElementById('closeChat');
+    const chatWindow = document.getElementById('chat-window');
+    const sendBtn = document.getElementById('sendChat');
+    const chatInput = document.getElementById('chatInput');
+    const chatMessages = document.getElementById('chatMessages');
+
+    let convoHistory = []; // short client-side history
+
+    function openChat() { chatWindow.style.display = 'flex'; chatWindow.setAttribute('aria-hidden','false'); chatInput.focus(); }
+    function closeChat() { chatWindow.style.display = 'none'; chatWindow.setAttribute('aria-hidden','true'); }
+
+    function appendMessage(role, text) {
+        const wrapper = document.createElement('div');
+        wrapper.className = 'chat-msg ' + (role === 'user' ? 'user' : 'bot');
+        const bubble = document.createElement('div');
+        bubble.className = 'bubble';
+        bubble.innerText = text;
+        wrapper.appendChild(bubble);
+        chatMessages.appendChild(wrapper);
+        chatMessages.scrollTop = chatMessages.scrollHeight;
+    }
+
+    function setLoadingState(isLoading) {
+        sendBtn.disabled = isLoading;
+        sendBtn.innerText = isLoading ? '...' : 'Send';
+    }
+
+    async function sendMessage() {
+        const text = chatInput.value.trim();
+        if (!text) return;
+        appendMessage('user', text);
+        convoHistory.push({role: 'user', content: text});
+        chatInput.value = '';
+        setLoadingState(true);
+
+        try {
+            const res = await fetch('/chatbot', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({ message: text, history: convoHistory })
+            });
+            const data = await res.json();
+            if (res.ok && data.reply) {
+                appendMessage('assistant', data.reply);
+                convoHistory.push({role: 'assistant', content: data.reply});
+            } else {
+                appendMessage('assistant', 'Sorry, something went wrong: ' + (data.error || res.status));
+            }
+        } catch (e) {
+            console.error('Chat error', e);
+            appendMessage('assistant', 'Network error. Please try again.');
+        } finally {
+            setLoadingState(false);
+        }
+    }
+
+    openBtn.addEventListener('click', openChat);
+    closeBtn.addEventListener('click', closeChat);
+    sendBtn.addEventListener('click', sendMessage);
+    chatInput.addEventListener('keydown', function(e){
+        if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); }
+    });
+
+    // restore convo from sessionStorage (optional)
+    window.addEventListener('DOMContentLoaded', () => {
+        try {
+            const saved = JSON.parse(sessionStorage.getItem('agri_convo') || '[]');
+            if (Array.isArray(saved)) {
+                convoHistory = saved;
+                saved.forEach(m => appendMessage(m.role === 'user' ? 'user' : 'assistant', m.content));
+            }
+        } catch(e){}
+    });
+    window.addEventListener('beforeunload', () => {
+        try { sessionStorage.setItem('agri_convo', JSON.stringify(convoHistory)); } catch(e){}
+    });
+})();
+</script>
+<!-- END: AgriAssist Chatbot -->
+
+</body>
+</html>
